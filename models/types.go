@@ -2,7 +2,6 @@ package models
 
 import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const (
@@ -12,11 +11,6 @@ const (
 	mongodbBalanceCollection = "balance"
 	mongodbSpendsCollection  = "spends"
 )
-
-// Database creates a Database client
-type Database struct {
-	client *mongo.Client
-}
 
 // User struct defines a user
 // swagger:model

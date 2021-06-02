@@ -13,41 +13,33 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/bsonx"
 )
 
 // GetUsers will return all users from database
 func GetUsers(parentCtx context.Context) (users []SanitizedUser, err error) {
-	ctx, span := observability.Span(parentCtx, "mongodb", "getUsers", []attribute.KeyValue{})
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.getUsers", []attribute.KeyValue{})
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
-	if err != nil {
-		return []SanitizedUser{}, err
+	var m services.MongoOperationsInterface
+	m = services.Storage{
+		NoSQLClient: services.NoSQLClient,
 	}
 
-	col := dbClient.Database(mongodbDatabase).Collection(mongodbUserCollection)
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	cursor, err := col.Find(ctx, bson.M{})
+	cursor, err := m.Get(ctx, mongodbDatabase, mongodbUserCollection, bson.M{})
 	if err != nil {
-		cancel()
 		return []SanitizedUser{}, err
 	}
 
 	defer cursor.Close(ctx)
-	defer cancel()
 
 	for cursor.Next(ctx) {
 		var user SanitizedUser
 		cursor.Decode(&user)
 		users = append(users, user)
-		defer cancel()
 	}
 
 	if err := cursor.Err(); err != nil {
-		cancel()
 		return []SanitizedUser{}, err
 	}
 
@@ -59,7 +51,7 @@ func GetUser(parentCtx context.Context, id string) (u *User, err error) {
 	spanTags := []attribute.KeyValue{
 		attribute.Key("user.id").String(id),
 	}
-	ctx, span := observability.Span(parentCtx, "mongodb", "getUser", spanTags)
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.getUser", spanTags)
 	defer span.End()
 
 	pid, err := primitive.ObjectIDFromHex(id)
@@ -67,51 +59,45 @@ func GetUser(parentCtx context.Context, id string) (u *User, err error) {
 		return &User{}, err
 	}
 
-	dbClient, err := services.InitDatabase()
-	if err != nil {
-		return &User{}, err
-	}
-
 	var user User
 
-	col := dbClient.Database(mongodbDatabase).Collection(mongodbUserCollection)
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	var m services.MongoOperationsInterface
+	m = services.Storage{
+		NoSQLClient: services.NoSQLClient,
+	}
 
-	err = col.FindOne(ctx, bson.M{"_id": pid}).Decode(&user)
+	r, err := m.GetOne(ctx, mongodbDatabase, mongodbUserCollection, bson.M{"_id": pid})
 	if err != nil {
-		cancel()
 		return &User{}, err
 	}
 
+	r.Decode(&user)
+
 	span.SetAttributes(attribute.Key("user.login").String(user.Login))
-	defer cancel()
 	return &user, nil
 }
 
 // GetUserByFilter will return a user from database based on key,pair BSON
 func GetUserByFilter(parentCtx context.Context, bsonKey string, bsonValue string) (u *User, err error) {
-	ctx, span := observability.Span(parentCtx, "mongodb", "getUser", []attribute.KeyValue{})
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.getUser", []attribute.KeyValue{})
 	defer span.End()
-
-	dbClient, err := services.InitDatabase()
-	if err != nil {
-		return &User{}, err
-	}
 
 	var user User
 
-	col := dbClient.Database(mongodbDatabase).Collection(mongodbUserCollection)
-	ctx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
+	var m services.MongoOperationsInterface
+	m = services.Storage{
+		NoSQLClient: services.NoSQLClient,
+	}
 
-	err = col.FindOne(ctx, bson.M{bsonKey: bsonValue}).Decode(&user)
+	r, err := m.GetOne(ctx, mongodbDatabase, mongodbUserCollection, bson.M{bsonKey: bsonValue})
 	if err != nil {
-		cancel()
 		return &User{}, err
 	}
 
+	r.Decode(&user)
+
 	span.SetAttributes(attribute.Key("user.id").String(user.ID.String()))
 	span.SetAttributes(attribute.Key("user.login").String(user.Login))
-	defer cancel()
 	return &user, nil
 }
 
@@ -122,48 +108,39 @@ func CreateUser(parentCtx context.Context, u User) (id string, err error) {
 		attribute.Key("user.login").String(u.Login),
 	}
 
-	ctx, span := observability.Span(parentCtx, "mongodb", "CreateUser", spanTags)
-	defer span.End()
-
-	dbClient, err := services.InitDatabase()
-	if err != nil {
-		return "", err
-	}
-
-	col := dbClient.Database(mongodbDatabase).Collection(mongodbUserCollection)
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-
-	_, err = col.Indexes().CreateOne(
-		context.Background(),
-		mongo.IndexModel{
-			Keys:    bsonx.Doc{{Key: "login", Value: bsonx.Int32(1)}},
-			Options: options.Index().SetUnique(true),
-		},
-	)
-
 	// adding timestamp to creationDate
 	t := time.Now()
 	u.CreatedAt = primitive.NewDateTimeFromTime(t)
 
 	// adding salted password for user
 	if u.SaltedPassword == "" {
-		cancel()
 		return "", errors.New("empty password input")
 	}
 
 	u.SaltedPassword, err = crypt.GenerateSaltedPassword(u.SaltedPassword)
 	if err != nil {
-		cancel()
 		return "", err
 	}
 
-	r, err := col.InsertOne(ctx, u)
+	var m services.MongoOperationsInterface
+	m = services.Storage{
+		NoSQLClient: services.NoSQLClient,
+	}
+
+	// set span before mongo operation
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.CreateUser", spanTags)
+	defer span.End()
+
+	m.CreateIndex(
+		ctx, mongodbDatabase,
+		mongodbUserCollection,
+		bsonx.Doc{{Key: "login", Value: bsonx.Int32(1)}},
+	)
+
+	r, err := m.CreateOne(ctx, mongodbDatabase, mongodbUserCollection, u)
 	if err != nil {
-		cancel()
 		return "", err
 	}
-
-	defer cancel()
 
 	observability.Metrics.Users.UsersCreated.Inc()
 	log.Infoln("created user", u.Login)
@@ -176,7 +153,7 @@ func DeleteUser(parentCtx context.Context, id string) (err error) {
 		attribute.Key("user.id").String(id),
 	}
 
-	ctx, span := observability.Span(parentCtx, "mongodb", "DeleteUser", spanTags)
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.DeleteUser", spanTags)
 	defer span.End()
 
 	pid, err := primitive.ObjectIDFromHex(id)
@@ -184,7 +161,7 @@ func DeleteUser(parentCtx context.Context, id string) (err error) {
 		return err
 	}
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return err
 	}

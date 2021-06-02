@@ -21,10 +21,10 @@ func CreateBalance(parentCtx context.Context, b Balance) (id string, err error) 
 		attribute.Key("balance.owner.id").String(b.OwnerID.String()),
 	}
 
-	ctx, span := observability.Span(parentCtx, "mongodb", "CreateBalance", spanTags)
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.CreateBalance", spanTags)
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +71,7 @@ func GetBalance(parentCtx context.Context, ownerID string, month int64, year int
 		attribute.Key("balance.owner.id").String(ownerID),
 	}
 
-	ctx, span := observability.Span(parentCtx, "mongodb", "GetBalance", spanTags)
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.GetBalance", spanTags)
 	defer span.End()
 
 	oid, err := primitive.ObjectIDFromHex(ownerID)
@@ -79,7 +79,7 @@ func GetBalance(parentCtx context.Context, ownerID string, month int64, year int
 		return &Balance{}, err
 	}
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return &Balance{}, err
 	}
@@ -107,10 +107,10 @@ func GetAllBalances(parentCtx context.Context, ownerID string) (balances []Balan
 		attribute.Key("balance.owner.id").String(ownerID),
 	}
 
-	ctx, span := observability.Span(parentCtx, "mongodb", "GetAllBalances", spanTags)
+	ctx, span := observability.Span(parentCtx, "mongodb", "models.GetAllBalances", spanTags)
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return []Balance{}, err
 	}

@@ -25,7 +25,7 @@ func CreateCard(parentCtx context.Context, c CreditCard) (id string, err error) 
 	ctx, span := observability.Span(parentCtx, "mongodb", "CreateCard", spanTags)
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return "", err
 	}
@@ -64,7 +64,7 @@ func GetAllCards(parentCtx context.Context) (cards []CreditCard, err error) {
 	ctx, span := observability.Span(parentCtx, "mongodb", "GetAllCards", []attribute.KeyValue{})
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return []CreditCard{}, err
 	}
@@ -104,7 +104,7 @@ func GetCards(parentCtx context.Context, ownerID string) (cards []CreditCard, er
 	ctx, span := observability.Span(parentCtx, "mongodb", "GetUserCards", spanTags)
 	defer span.End()
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return []CreditCard{}, err
 	}
@@ -154,7 +154,7 @@ func DeleteCard(parentCtx context.Context, id string) (err error) {
 		return err
 	}
 
-	dbClient, err := services.InitDatabase()
+	dbClient, err := services.InitMongoDB()
 	if err != nil {
 		return err
 	}

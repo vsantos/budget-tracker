@@ -7,6 +7,7 @@ services:
     - 5000:5000
     links:
       - jaeger
+      - mongodb
   mongodb:
     image: mongo:4.4.0
     container_name: mongodb
@@ -32,15 +33,15 @@ services:
       - "14268:14268"
       - "9411:9411"
       - "16686:16686"
-  prometheus:
-    build: ./docker/prometheus
-    container_name: prometheus
-    links:
-      - budget-tracker
-    volumes:
-      - ./docker/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
+  # prometheus:
+  #   build: ./docker/prometheus
+  #   container_name: prometheus
+  #   links:
+  #     - budget-tracker
+  #   volumes:
+  #     - ./docker/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml
+  #   ports:
+  #     - "9090:9090"
   # swagger_ui:
   #   image: swaggerapi/swagger-ui:v3.33.0
   #   environment:

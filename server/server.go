@@ -1,6 +1,9 @@
 package server
 
 import (
+	"budget-tracker-api/observability"
+	"budget-tracker-api/routes"
+	"budget-tracker-api/services"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -15,17 +18,24 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Server will initiate a server
+type Server struct {
+	HTTPConfig    HTTPConfig
+	Observability observability.Config
+	NoSQL         services.Storage
+	Router        *mux.Router
+}
+
 // HTTPConfig will define server configuration for both HTTP/1 and HTTP/2 protocols
 type HTTPConfig struct {
 	Port      string
-	Router    *mux.Router
 	TLSConfig *tls.Config
 	CertFile  string
 	KeyFile   string
 }
 
-// WaitGracefulShutdown is blocking code to wait a SIGNAL to graceful shutdown the server
-func WaitGracefulShutdown(srv *http.Server, timeoutSeconds time.Duration) (err error) {
+// waitGracefulShutdown is blocking code to wait a SIGNAL to graceful shutdown the server
+func waitGracefulShutdown(srv *http.Server, timeoutSeconds time.Duration) (err error) {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	os := <-quit
@@ -40,25 +50,47 @@ func WaitGracefulShutdown(srv *http.Server, timeoutSeconds time.Duration) (err e
 	return nil
 }
 
-// InitHTTPServer will init a HTTP/1 (h2) server with optional TLS enforcement
-func (c HTTPConfig) InitHTTPServer(serveTLS bool) (err error) {
+func (sv *Server) setupRoutes() {
+	routes.InitRoutes(sv.Observability.TracerProviders.ServiceName, sv.Router)
+}
+
+func (sv *Server) setupTracing() (err error) {
+
+	p, err := observability.InitTracerProviders(sv.Observability.TracerProviders)
+	if err != nil {
+		log.Errorln(err)
+	}
+
+	observability.InitGlobalTrace(p.Jaeger)
+	observability.InitMetrics()
+
+	return nil
+}
+
+// Start will serve a HTTP/1 (h2) server with optional TLS enforcement
+func (sv *Server) Start(serveTLS bool) (err error) {
+	sv.setupRoutes()
+	if err := sv.setupTracing(); err != nil {
+		return err
+	}
+
 	srv := &http.Server{
-		Addr:      c.Port,
-		Handler:   c.Router,
-		TLSConfig: c.TLSConfig,
+		Addr:      sv.HTTPConfig.Port,
+		Handler:   sv.Router,
+		TLSConfig: sv.HTTPConfig.TLSConfig,
 	}
 
 	if serveTLS {
-		log.Infoln(fmt.Sprintf("Started %s Application at port %s with TLS enabled", srv.TLSConfig.NextProtos[0], c.Port))
+		log.Infoln(fmt.Sprintf("Started %s Application at port %s with TLS enabled", srv.TLSConfig.NextProtos[0], sv.HTTPConfig.Port))
 		go func() {
-			if err := srv.ListenAndServeTLS(c.CertFile, c.KeyFile); err != nil && err != http.ErrServerClosed {
+			if err := srv.ListenAndServeTLS(sv.HTTPConfig.CertFile, sv.HTTPConfig.KeyFile); err != nil && err != http.ErrServerClosed {
 				log.Panicln("Server error: ", err)
 			}
 		}()
 	}
 
 	if !serveTLS {
-		log.Infoln(fmt.Sprintf("Started %s Application at port %s with TLS disabled", srv.TLSConfig.NextProtos[0], c.Port))
+		log.Infoln(fmt.Sprintf("Started %s Application at port %s with TLS disabled", srv.TLSConfig.NextProtos[0], sv.HTTPConfig.Port))
 		go func() {
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Panicln("Server error: ", err)
@@ -66,7 +98,7 @@ func (c HTTPConfig) InitHTTPServer(serveTLS bool) (err error) {
 		}()
 	}
 
-	if err := WaitGracefulShutdown(srv, 15); err != nil {
+	if err := waitGracefulShutdown(srv, 15); err != nil {
 		return err
 	}
 

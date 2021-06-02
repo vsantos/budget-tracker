@@ -9,6 +9,11 @@ import (
 	"go.opentelemetry.io/otel/semconv"
 )
 
+// Config o
+type Config struct {
+	TracerProviders ProvidersConfig
+}
+
 // ProvidersConfig will
 type ProvidersConfig struct {
 	ServiceName string
@@ -24,7 +29,7 @@ type Providers struct {
 }
 
 // InitTracerProviders will return a struct with both providers: jaeger and stdout
-func (c ProvidersConfig) InitTracerProviders() (p Providers, err error) {
+func InitTracerProviders(c ProvidersConfig) (p Providers, err error) {
 	resourceAttributes := resource.NewWithAttributes(
 		semconv.ServiceNameKey.String(c.ServiceName),
 	)
